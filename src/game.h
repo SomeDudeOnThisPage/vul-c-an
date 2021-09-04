@@ -7,8 +7,6 @@
 
 #define GLFW_INCLUDE_VULKAN
 
-// #include <glad/gl.h>
-// #include <glad/vulkan.h>
 #include <GLFW/glfw3.h>
 
 #endif //GAME_GAME_H

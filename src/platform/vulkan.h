@@ -10,9 +10,8 @@
 #include "window.h"
 
 typedef struct {
-    VkInstance           *instance;
-    VkApplicationInfo    *a_info;
-    VkInstanceCreateInfo *c_info;
+    VkInstance *instance;
+    uint32_t x;
 } VulkanInstance_t;
 
 uint32_t vulkan_initialize(GameWindow_t *window, VulkanInstance_t *vulkan_instance);
