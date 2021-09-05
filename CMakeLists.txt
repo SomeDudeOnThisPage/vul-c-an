@@ -29,7 +29,7 @@ set(HEADER_FILES
         ${SOURCE_DIRECTORY}/platform/window.h
         ${SOURCE_DIRECTORY}/game.h
         ${SOURCE_DIRECTORY}/platform/vulkan.h
-)
+        src/debug.h)
 
 # include stuff needed for our program, namely GLFW, its' dependencies and the vulkan SDK headers
 add_subdirectory(${GLFW_DIRECTORY})

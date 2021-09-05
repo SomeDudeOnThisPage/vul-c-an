@@ -1,11 +1,22 @@
-//
-// Created by robin on 03.09.2021.
-//
 #include "vulkan.h"
 
-void vulkan_destroy(VulkanInstance_t *instance) {
-    DEBUG_PRINT("destroying instance '%p'\n", instance->instance);
+#ifdef DEBUG
+    uint32_t requested_layer_count = 1;
+    const char* requested_layers[] = {
+        "VK_LAYER_KHRONOS_validation"
+    };
+#else
+    uint32_t requested_layer_count = 0;
+    const char* requested_layers[0];
+#endif
 
+void vulkan_destroy(VulkanInstance_t *instance) {
+    VkDevice vk_device = *instance->logical_device;
+    DEBUG_PRINT("destroying device '%p' %p\n", instance->logical_device, vk_device);
+    vkDestroyDevice(vk_device, NULL);
+
+    // this operation also destroys the physical device
+    DEBUG_PRINT("destroying instance '%p'\n", instance->instance);
     VkInstance vk_instance = *instance->instance;
     vkDestroyInstance(vk_instance, NULL);
 }
@@ -68,7 +79,7 @@ uint8_t check_glfw_extensions(const uint32_t *glfw_extension_count, const char *
     return 1;
 }
 
-uint8_t check_validation_layers(uint32_t requested_layer_count, const char** requested_layers, uint32_t layer_count, VkLayerProperties* layers) {
+uint8_t check_validation_layers(uint32_t layer_count, VkLayerProperties* layers) {
     DEBUG_PRINT("Requested the following %d validation layers:\n", requested_layer_count);
 
     for (uint32_t i = 0; i < requested_layer_count; i++) {
@@ -90,17 +101,98 @@ uint8_t check_validation_layers(uint32_t requested_layer_count, const char** req
     return 1;
 }
 
-uint32_t vulkan_initialize(GameWindow_t *window, VulkanInstance_t *vulkan_instance) {
+uint8_t vulkan_initialize_queue_families(VulkanInstance_t *vulkan_instance) {
+    VkPhysicalDevice physical_device = *vulkan_instance->physical_devices[vulkan_instance->physical_device];
+
+    uint32_t queue_family_count;
+    vkGetPhysicalDeviceQueueFamilyProperties(physical_device, &queue_family_count, NULL);
+
+    printf("QueueFamilyCount %d\n", queue_family_count);
+
+    VkQueueFamilyProperties properties[queue_family_count];
+    vkGetPhysicalDeviceQueueFamilyProperties(physical_device, &queue_family_count, properties);
+
+    for (uint32_t i = 0; i < queue_family_count; i++) {
+        // TODO: define this somewhere in a config, add support for multiple different flags in different queues
+        if (properties[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) {
+            vulkan_instance->graphics_queue_family = i;
+            return 1;
+        }
+    }
+
+    return 0;
+}
+
+uint8_t vulkan_initialize_physical_device(VulkanInstance_t *vulkan_instance) {
+    vulkan_instance->physical_device = 0;
+
+    uint32_t physical_device_count;
+    vkEnumeratePhysicalDevices(*vulkan_instance->instance, &physical_device_count, NULL);
+
+    DEBUG_PRINT("Queried %d physical devices supporting Vulkan\n", physical_device_count);
+    if (physical_device_count <= 0) {
+        return 0;
+    }
+
+    VkPhysicalDevice *devices = malloc(sizeof(VkPhysicalDevice) * physical_device_count);
+    vkEnumeratePhysicalDevices(*vulkan_instance->instance, &physical_device_count, devices);
+
+    // so yeah, this is bad
+    // TODO: check for device features and use the most suited one
+    vulkan_instance->physical_devices = &devices;
+    vulkan_instance->physical_device = 0;
+
+    VkPhysicalDeviceProperties device_properties;
+    vkGetPhysicalDeviceProperties(devices[0], &device_properties);
+
+    DEBUG_PRINT("Physical device name is '%s' - API v.%d\n", device_properties.deviceName, device_properties.apiVersion);
+
+    vulkan_initialize_queue_families(vulkan_instance);
+
+    return 1;
+}
+
+uint8_t vulkan_initialize_logical_device(VulkanInstance_t *vulkan_instance) {
+    // we will need the VkDevice later to destroy it, so keep it on the heap I guess?
+    VkDevice *device = malloc(sizeof(VkDevice));
+
+    float queue_priority = 1.0f; // TODO: store in VulkanInstance_t (some form of QueueInfo_t array)
+
+    VkDeviceQueueCreateInfo qc_info = {};
+    qc_info.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+    qc_info.queueFamilyIndex = vulkan_instance->graphics_queue_family;
+    qc_info.queueCount = 1; // TODO: store in VulkanInstance_t
+    qc_info.pQueuePriorities = &queue_priority;
+
+    VkPhysicalDeviceFeatures pd_features = {}; // no features for now
+
+    VkDeviceCreateInfo c_info = {};
+    c_info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+    c_info.pQueueCreateInfos = &qc_info;
+    c_info.queueCreateInfoCount = 1;
+    c_info.pEnabledFeatures = &pd_features;
+    c_info.enabledExtensionCount = 0;
 #ifdef DEBUG
-    uint32_t requested_layer_count = 1;
-    const char* requested_layers[] = {
-        "VK_LAYER_KHRONOS_validation"
-    };
+    //c_info.enabledLayerCount = 0;
+    c_info.enabledLayerCount = vulkan_instance->validation_layer_count;
+    c_info.ppEnabledLayerNames = vulkan_instance->validation_layers;
 #else
-    uint32_t requested_layer_count = 0;
-    const char* requested_layers[0];
+    c_info.enabledLayerCount = 0;
 #endif
 
+    VkPhysicalDevice physical_device = *vulkan_instance->physical_devices[vulkan_instance->physical_device];
+    if (vkCreateDevice(physical_device, &c_info, NULL, device) != VK_SUCCESS) {
+        DEBUG_PRINT("Failed to create logical device");
+        return 0;
+    }
+
+    printf("ADDRESS OF LOGICAL DEVICE %p", device);
+    vulkan_instance->logical_device = device;
+
+    return 1;
+}
+
+uint8_t vulkan_initialize(GameWindow_t *window, VulkanInstance_t *vulkan_instance) {
     uint32_t glfw_extension_count = 0;
     const char **glfw_extensions;
     glfw_extensions = glfwGetRequiredInstanceExtensions(&glfw_extension_count);
@@ -117,14 +209,19 @@ uint32_t vulkan_initialize(GameWindow_t *window, VulkanInstance_t *vulkan_instan
 
     // make sure we support all required glfw extensions
     if (!check_glfw_extensions(&glfw_extension_count, glfw_extensions, extension_count, extensions)) {
-        DEBUG_PRINT("Failed to query all required extensions for GLFW");
+        DEBUG_PRINT("Failed to query all required extensions for GLFW\n");
         return 0;
     }
 
-    if (!check_validation_layers(requested_layer_count, requested_layers, validation_layer_count, layers)) {
-        DEBUG_PRINT("Failed to query all required validation layers for requested configuration");
+#ifdef DEBUG
+    if (!check_validation_layers(validation_layer_count, layers)) {
+        DEBUG_PRINT("Failed to query all required validation layers for requested configuration\n");
         return 0;
     }
+
+    vulkan_instance->validation_layer_count = requested_layer_count;
+    vulkan_instance->validation_layers = requested_layers;
+#endif
 
     // create application info containing version and names
     VkApplicationInfo a_info;
@@ -144,10 +241,24 @@ uint32_t vulkan_initialize(GameWindow_t *window, VulkanInstance_t *vulkan_instan
     c_info.ppEnabledLayerNames = requested_layers;
     c_info.enabledLayerCount = requested_layer_count;
 
+    // TODO
+/*    VkDebugUtilsMessengerCreateInfoEXT debug_create_info;
+#ifdef DEBUG
+    debug_create_info.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
+    debug_create_info.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT |
+                                        VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
+                                        VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
+    debug_create_info.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
+                                    VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
+                                    VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
+    debug_create_info.
+
+#endif*/
+
     // create the actual instance using the instance creation info, check for creation failure
     VkInstance *instance = malloc(sizeof(VkInstance));
     if (vkCreateInstance(&c_info, NULL, instance) != VK_SUCCESS) {
-        DEBUG_PRINT("failed to create vulkan instance");
+        DEBUG_PRINT("failed to create vulkan instance\n");
          return 0;
     }
 

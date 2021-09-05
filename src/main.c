@@ -8,6 +8,22 @@ uint8_t main() {
     // initialize vulkan instance and required extensions for GLFW
     VulkanInstance_t vk_instance;
     if (!vulkan_initialize(window, &vk_instance)) {
+        DEBUG_PRINT("failed to initialize vulkan instance");
+        return -1;
+    }
+
+    if (!vulkan_initialize_physical_device(&vk_instance)) {
+        DEBUG_PRINT("failed to initialize vulkan physical device");
+        return -1;
+    }
+
+    /*if (!vulkan_initialize_queue_families(&vk_instance)) {
+        DEBUG_PRINT("failed to initialize vulkan queue families");
+        return -1;
+    }*/
+
+    if (!vulkan_initialize_logical_device(&vk_instance)) {
+        DEBUG_PRINT("failed to initialize vulkan logical device");
         return -1;
     }
 
