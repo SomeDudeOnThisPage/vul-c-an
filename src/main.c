@@ -1,13 +1,5 @@
 #include "game.h"
 
-#include "platform/window.h"
-#include "platform/vulkan.h"
-
-void game_cleanup(VulkanInstance_t *vk, GameWindow_t *window) {
-    vulkan_destroy(vk);
-    window_destroy(window);
-}
-
 uint8_t main() {
     // initialize the GLFW window
     GameWindow_t *window = window_create(API_VULKAN, 1600, 900);
@@ -19,13 +11,16 @@ uint8_t main() {
         return -1;
     }
 
+    Game_t game;
+    game.window = window;
+    game.vulkan_instance = &vk_instance;
+
     while (!glfwWindowShouldClose(window->m_window)) {
         glfwSwapBuffers(window->m_window);
         glfwPollEvents();
     }
 
-    // cleanup vulkan context and GLFW window
-    game_cleanup(&vk_instance, window);
+    game_destroy(&game);
 
     return 0;
 }

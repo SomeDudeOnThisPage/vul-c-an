@@ -22,7 +22,7 @@ set(SOURCE_FILES
         ${SOURCE_DIRECTORY}/main.c
         ${SOURCE_DIRECTORY}/platform/window.c
         ${SOURCE_DIRECTORY}/platform/vulkan.c
-)
+        src/game.c)
 
 # project source header files
 set(HEADER_FILES
@@ -42,3 +42,5 @@ include_directories(
 # make the thing happen
 add_executable(game ${SOURCE_FILES} ${HEADER_FILES})
 target_link_libraries(game glfw ${GLFW_LIBRARIES} ${VULKAN_SDK_LINK_LIBRARY})
+target_compile_definitions(game PUBLIC "$<$<CONFIG:VK_DEBUG>:VK_DEBUG>")
+target_compile_definitions(game PUBLIC "$<$<CONFIG:DEBUG>:DEBUG>")
